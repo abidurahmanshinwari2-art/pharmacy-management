@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pharmacy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pharmacy
+      POSTGRES_PASSWORD: pharmacy
+      POSTGRES_DB: pharmacy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pharmacy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pharmacy -d pharmacy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pharmacy_pgdata:

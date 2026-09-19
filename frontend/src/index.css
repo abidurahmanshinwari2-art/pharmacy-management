@@ -1,0 +1,475 @@
+@import "tailwindcss";
+
+:root,
+[data-theme="leaf"] {
+  --ink: #12352c;
+  --muted: #4d6b61;
+  --paper: #f4f7f5;
+  --card: #ffffff;
+  --line: #e4eee9;
+  --copper: #0b7c56;
+  --copper-deep: #0a5c41;
+  --sidebar: #0b3d32;
+  --sidebar-2: #0f5344;
+  --sidebar-text: #ecfdf8;
+  --sidebar-muted: #9ad4c0;
+  --sidebar-end: #072820;
+  --shadow: 0 10px 30px rgba(18, 53, 44, 0.04);
+  --text-size: 16px;
+  --sans: "Plus Jakarta Sans", "Vazirmatn", "Noto Naskh Arabic", sans-serif;
+}
+
+[data-theme="pine"] {
+  --ink: #14241e;
+  --muted: #66756e;
+  --paper: #f3f0e6;
+  --card: #fbfaf3;
+  --line: #ddd8c4;
+  --copper: #c9a227;
+  --copper-deep: #9e7d12;
+  --sidebar: #12352c;
+  --sidebar-2: #1a463a;
+  --sidebar-text: #e4efe8;
+  --sidebar-muted: #8aa396;
+  --sidebar-end: #0c241e;
+  --shadow: 0 18px 40px rgba(18, 53, 44, 0.08);
+  --text-size: 16px;
+  --sans: "Plus Jakarta Sans", "Vazirmatn", "Noto Naskh Arabic", sans-serif;
+}
+
+[data-theme="ink"] {
+  --ink: #1a3354;
+  --muted: #6b7f99;
+  --paper: #f7f9fc;
+  --card: #ffffff;
+  --line: #d5deea;
+  --copper: #e09f1f;
+  --copper-deep: #b37b10;
+  --sidebar: #d6e4f5;
+  --sidebar-2: #c5d7ee;
+  --sidebar-text: #1a3354;
+  --sidebar-muted: #5a7394;
+  --sidebar-end: #c5d7ee;
+  --shadow: 0 12px 28px rgba(26, 51, 84, 0.08);
+}
+
+[data-theme="ruby"] {
+  --ink: #5a2428;
+  --muted: #9a6a6e;
+  --paper: #fff8f6;
+  --card: #ffffff;
+  --line: #f0d5d2;
+  --copper: #e06b4f;
+  --copper-deep: #c24e34;
+  --sidebar: #f8d9d6;
+  --sidebar-2: #f0c4c0;
+  --sidebar-text: #6b1f24;
+  --sidebar-muted: #a45c60;
+  --sidebar-end: #f0c4c0;
+  --shadow: 0 12px 28px rgba(90, 36, 40, 0.08);
+}
+
+[data-theme="teal"] {
+  --ink: #163033;
+  --muted: #66787a;
+  --paper: #f4fbf9;
+  --card: #ffffff;
+  --line: #cfe8e3;
+  --copper: #2a9d8f;
+  --copper-deep: #1d7a6f;
+  --sidebar: #d2efe9;
+  --sidebar-2: #bce6dd;
+  --sidebar-text: #0f4a44;
+  --sidebar-muted: #4f827b;
+  --sidebar-end: #bce6dd;
+  --shadow: 0 12px 28px rgba(22, 48, 51, 0.08);
+}
+
+[data-theme="stone"] {
+  --ink: #3d3228;
+  --muted: #8a7b6a;
+  --paper: #faf6ef;
+  --card: #fffdf9;
+  --line: #e8dccb;
+  --copper: #d4783a;
+  --copper-deep: #b35c22;
+  --sidebar: #efe4d4;
+  --sidebar-2: #e4d3b8;
+  --sidebar-text: #3d3228;
+  --sidebar-muted: #8a7b6a;
+  --sidebar-end: #e4d3b8;
+  --shadow: 0 12px 28px rgba(61, 50, 40, 0.08);
+}
+
+html[data-font="clear"] {
+  --sans: "Noto Sans", "Noto Sans Arabic", sans-serif;
+}
+
+html[data-font="naskh"] {
+  --sans: "Noto Naskh Arabic", "Vazirmatn", "Plus Jakarta Sans", sans-serif;
+}
+
+html[data-font="simple"] {
+  --sans: "Segoe UI", "Vazirmatn", sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  font-size: var(--text-size);
+  direction: ltr;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.qty-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qty-row .field {
+  text-align: center;
+}
+
+th {
+  text-align: start;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  outline: none;
+  color: var(--ink);
+}
+
+.field:focus {
+  border-color: var(--copper);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--copper) 20%, transparent);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--copper);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--copper-deep);
+}
+
+.btn-ghost {
+  background: color-mix(in srgb, var(--copper) 12%, white);
+  color: var(--ink);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.theme-card {
+  text-align: start;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 16px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.theme-card.active {
+  border-color: var(--copper);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--copper) 25%, transparent);
+}
+
+.theme-swatches {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.theme-swatches i {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: block;
+}
+
+.size-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.size-row input[type="range"] {
+  flex: 1;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.soft-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+.table-head {
+  background: color-mix(in srgb, var(--copper) 10%, white);
+}
+
+.note {
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+  background: color-mix(in srgb, var(--copper) 10%, white);
+}
+
+.money {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.money-sym {
+  display: inline-block;
+  margin-inline-start: 0.18em;
+  font-size: 0.78em;
+  font-weight: 600;
+  opacity: 0.72;
+  vertical-align: 0.08em;
+}
+
+.bill-item-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.bill-item-cols {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bill-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bill-col span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge-ok {
+  background: color-mix(in srgb, var(--copper) 16%, white);
+  color: var(--copper-deep);
+}
+
+.badge-warn {
+  background: #fff4d6;
+  color: #8a6a12;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  background: var(--paper);
+}
+
+.login-art {
+  padding: 48px;
+  background:
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--copper) 28%, transparent), transparent 28%),
+    linear-gradient(160deg, var(--sidebar-2) 0%, var(--sidebar-end) 100%);
+  color: var(--sidebar-text);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.login-kicker {
+  color: var(--sidebar-muted);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+
+.login-art h2 {
+  font-size: 44px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.login-tagline {
+  max-width: 440px;
+  color: var(--sidebar-text);
+  font-size: 18px;
+}
+
+.login-card {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.login-box {
+  width: min(420px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+}
+
+.login-box h3 {
+  font-size: 28px;
+  margin: 0 0 6px;
+}
+
+@media (max-width: 1100px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+  .login-art {
+    min-height: 240px;
+  }
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.btn-view {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.btn-edit {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.btn-print {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.btn-danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.receipt {
+  width: 72mm;
+  margin: 0 auto;
+  font-size: 12px;
+  color: #111;
+  text-align: center;
+}
+
+.receipt-print {
+  position: fixed;
+  left: -120vw;
+  top: 0;
+}
+
+.receipt table {
+  width: 100%;
+  text-align: start;
+  margin: 8px 0;
+}
+
+.receipt td:last-child {
+  text-align: end;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 2mm;
+  }
+  body.ticket-print {
+    width: 80mm;
+  }
+  body.ticket-print * { visibility: hidden; }
+  body.ticket-print .receipt-print,
+  body.ticket-print .receipt-print * { visibility: visible; }
+  body.ticket-print .receipt-print {
+    position: absolute;
+    inset: 0;
+    width: 72mm;
+    background: white;
+    color: black;
+  }
+  body:not(.ticket-print) * { visibility: hidden; }
+  body:not(.ticket-print) .print-sheet,
+  body:not(.ticket-print) .print-sheet * { visibility: visible; }
+  body:not(.ticket-print) .print-sheet {
+    position: absolute;
+    inset: 0;
+    background: white;
+    color: black;
+    padding: 16px;
+  }
+}
