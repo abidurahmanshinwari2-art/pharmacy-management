@@ -38,9 +38,13 @@ Settings → **Save backup**. The file is saved on the Desktop and in `pharmacy-
 
 Settings → **Load backup** to put that file onto another computer.
 
+## GitHub
+
+https://github.com/abidurahmanshinwari2-art/pharmacy-management
+
 ## Update
 
-After this project is on GitHub, Settings → **Update now**, or run `update-pharmacy.bat`. Shop data in `pharmacy-data` and the PostgreSQL database are not replaced.
+Settings → **Update now**, or run `update-pharmacy.bat`. Shop data in `pharmacy-data` and the PostgreSQL database are not replaced.
 
 ## Login after license
 
