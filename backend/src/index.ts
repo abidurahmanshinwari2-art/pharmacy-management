@@ -26,7 +26,13 @@ app.use(express.json({ limit: "80mb" }));
 
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api")) return next();
-  const open = new Set(["/api/health", "/api/license", "/api/update", "/api/update/apply"]);
+  const open = new Set([
+    "/api/health",
+    "/api/license",
+    "/api/settings/public",
+    "/api/update",
+    "/api/update/apply",
+  ]);
   if (open.has(req.path)) return next();
   if (licenseStatus().licensed) return next();
   return res.status(403).json({ message: "Enter the license key first.", needLicense: true });
