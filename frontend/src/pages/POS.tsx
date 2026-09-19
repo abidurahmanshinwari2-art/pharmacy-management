@@ -229,7 +229,7 @@ export function POS() {
   }
 
   return (
-    <div className="grid xl:grid-cols-[1.3fr_0.9fr] gap-5">
+    <div className="pos-layout">
       <div className="space-y-4">
         <PageHeader title={t("pos")} help={t("posHelp")} />
         <Field title={t("searchMedicine")}>
@@ -261,7 +261,7 @@ export function POS() {
         </div>
       </div>
 
-      <div className="card p-5 space-y-4">
+      <div className="card p-5 space-y-4 pos-bill">
         <div className="font-extrabold text-lg">{t("currentBill")}</div>
         {message && <div className="note">{message}</div>}
         <div className="space-y-3 max-h-72 overflow-auto">
