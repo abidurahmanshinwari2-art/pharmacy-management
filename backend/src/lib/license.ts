@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { appConfig, saveUserSettings, userSettings } from "./appPaths";
-import { prisma } from "./prisma";
+import { loadDb, saveDb } from "./storeDb";
 
 const PREFIX = "PMS";
 
@@ -52,7 +52,7 @@ export function licenseStatus() {
   return { licensed: Boolean(ok), shopName: ok || "" };
 }
 
-export async function activateLicense(shopName: string, key: string) {
+export function activateLicense(shopName: string, key: string) {
   const name = verifyLicenseKey(shopName, key);
   if (!name) throw new Error("Pharmacy name or license key is wrong.");
   saveUserSettings({
@@ -61,12 +61,13 @@ export async function activateLicense(shopName: string, key: string) {
     licensedAt: new Date().toISOString(),
   });
   try {
-    const current = await prisma.storeSetting.findFirst();
-    if (current) {
-      await prisma.storeSetting.update({ where: { id: current.id }, data: { name } });
+    const db = loadDb();
+    if (db.storeSettings[0]) {
+      db.storeSettings[0].name = name;
+      saveDb(db);
     }
   } catch {
-    // database can be empty on first open
+    // shop file can be created after first open
   }
   return { licensed: true, shopName: name };
 }

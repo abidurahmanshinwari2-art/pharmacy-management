@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
+import { loadDb, newId, withDb } from "../lib/storeDb";
 import { authRequired, requireRoles } from "../middleware/auth";
 
 export const settingsRouter = Router();
 
 settingsRouter.get("/public", async (_req, res) => {
-  const settings = await prisma.storeSetting.findFirst();
+  const settings = loadDb().storeSettings[0];
   res.json({
     name: settings?.name || "Noor Pharmacy",
     tagline: settings?.tagline || "",
@@ -16,8 +16,9 @@ settingsRouter.get("/public", async (_req, res) => {
 settingsRouter.use(authRequired);
 
 settingsRouter.get("/", async (_req, res) => {
-  const settings = await prisma.storeSetting.findFirst();
-  const locations = await prisma.location.findMany({ orderBy: { name: "asc" } });
+  const db = loadDb();
+  const settings = db.storeSettings[0] || {};
+  const locations = db.locations.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
   res.json({ ...settings, locations });
 });
 
@@ -43,26 +44,47 @@ settingsRouter.put("/", requireRoles("ADMIN"), async (req, res) => {
 
   if (!parsed.success) return res.status(400).json({ message: "Please complete all shop settings." });
 
-  const existing = await prisma.storeSetting.findFirst();
-  const settings = existing
-    ? await prisma.storeSetting.update({ where: { id: existing.id }, data: parsed.data })
-    : await prisma.storeSetting.create({ data: parsed.data });
-
+  const settings = withDb((db) => {
+    if (db.storeSettings[0]) {
+      Object.assign(db.storeSettings[0], parsed.data);
+      return db.storeSettings[0];
+    }
+    const created = { id: newId(), ...parsed.data };
+    db.storeSettings.push(created);
+    return created;
+  });
   res.json(settings);
 });
 
 settingsRouter.get("/locations", async (_req, res) => {
-  res.json(await prisma.location.findMany({ orderBy: { name: "asc" } }));
+  const locations = loadDb().locations.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  res.json(locations);
 });
 
 settingsRouter.post("/locations", requireRoles("ADMIN", "STOREKEEPER"), async (req, res) => {
   const parsed = z.object({ name: z.string().min(2), address: z.string().optional().default("") }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Room name is required." });
-  res.status(201).json(await prisma.location.create({ data: parsed.data }));
+  const room = withDb((db) => {
+    const created = { id: newId(), name: parsed.data.name, address: parsed.data.address };
+    db.locations.push(created);
+    return created;
+  });
+  res.status(201).json(room);
 });
 
 settingsRouter.patch("/locations/:id", requireRoles("ADMIN", "STOREKEEPER"), async (req, res) => {
   const parsed = z.object({ name: z.string().min(2).optional(), address: z.string().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid room." });
-  res.json(await prisma.location.update({ where: { id: String(req.params.id) }, data: parsed.data }));
+  try {
+    const room = withDb((db) => {
+      const existing = db.locations.find((item) => item.id === String(req.params.id));
+      if (!existing) throw new Error("Room not found.");
+      if (parsed.data.name) existing.name = parsed.data.name;
+      if (parsed.data.address !== undefined) existing.address = parsed.data.address;
+      return existing;
+    });
+    res.json(room);
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "Invalid room." });
+  }
 });

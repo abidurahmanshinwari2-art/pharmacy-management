@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
+import { loadDb, newId, nowIso, withDb } from "../lib/storeDb";
 import { authRequired, requireRoles } from "../middleware/auth";
 
 export const expensesRouter = Router();
 expensesRouter.use(authRequired);
 
 expensesRouter.get("/", async (_req, res) => {
-  res.json(await prisma.expense.findMany({ orderBy: { date: "desc" } }));
+  const expenses = loadDb().expenses.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  res.json(expenses);
 });
 
 expensesRouter.post("/", requireRoles("ADMIN", "ACCOUNTANT"), async (req, res) => {
@@ -21,14 +22,18 @@ expensesRouter.post("/", requireRoles("ADMIN", "ACCOUNTANT"), async (req, res) =
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Write a title and amount." });
-  const expense = await prisma.expense.create({
-    data: {
+  const expense = withDb((db) => {
+    const created = {
+      id: newId(),
       title: parsed.data.title,
       amount: parsed.data.amount,
       category: parsed.data.category,
-      date: parsed.data.date ? new Date(parsed.data.date) : new Date(),
-      notes: parsed.data.notes,
-    },
+      date: parsed.data.date ? new Date(parsed.data.date).toISOString() : nowIso(),
+      notes: parsed.data.notes || "",
+      createdAt: nowIso(),
+    };
+    db.expenses.push(created);
+    return created;
   });
   res.status(201).json(expense);
 });

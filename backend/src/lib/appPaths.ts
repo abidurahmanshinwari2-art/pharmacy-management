@@ -11,6 +11,7 @@ export type AppConfig = {
   port: number;
   githubRepo: string;
   licenseSecret: string;
+  jwtSecret?: string;
 };
 
 export type UserSettings = {
@@ -25,7 +26,7 @@ export function appConfig(): AppConfig {
   try {
     return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
   } catch {
-    return { version: "1.0.0", port: 4050, githubRepo: "", licenseSecret: "pms-pharmacy-key-v1-h7n3r9q5" };
+    return { version: "1.0.0", port: 4050, githubRepo: "", licenseSecret: "pms-pharmacy-key-v1-h7n3r9q5", jwtSecret: "pms-jwt-v1" };
   }
 }
 

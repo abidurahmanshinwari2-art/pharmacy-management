@@ -1,53 +1,42 @@
 import { Router } from "express";
-import { prisma } from "../lib/prisma";
 import { daysUntil } from "../lib/helpers";
+import { loadDb, stockOf } from "../lib/storeDb";
 import { authRequired } from "../middleware/auth";
 
 export const reportsRouter = Router();
 reportsRouter.use(authRequired);
 
+function inRange(value: string | Date, from: Date, to: Date) {
+  const time = new Date(value).getTime();
+  return time >= from.getTime() && time <= to.getTime();
+}
+
 reportsRouter.get("/dashboard", async (_req, res) => {
+  const db = loadDb();
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [todaySales, medicines, batches, customers, recentSales] = await Promise.all([
-    prisma.sale.findMany({
-      where: { createdAt: { gte: startOfDay }, status: { not: "VOID" } },
-      include: { items: true },
-    }),
-    prisma.medicine.findMany({ include: { batches: true } }),
-    prisma.batch.findMany({ include: { medicine: true } }),
-    prisma.customer.count(),
-    prisma.sale.findMany({
-      take: 6,
-      orderBy: { createdAt: "desc" },
-      include: { customer: true, createdBy: { select: { name: true } } },
-    }),
-  ]);
-
+  const todaySales = db.sales.filter((s) => s.status !== "VOID" && new Date(s.createdAt) >= startOfDay);
   const todayRevenue = todaySales.reduce((sum, s) => sum + Number(s.total), 0);
-  const todayCost = todaySales.reduce(
-    (sum, s) => sum + s.items.reduce((line, i) => line + Number(i.costPrice) * i.quantity, 0),
-    0
-  );
-  const stockValue = batches.reduce((sum, b) => sum + Number(b.costPrice) * b.quantity, 0);
-  const lowStock = medicines.filter((m) => m.batches.reduce((s, b) => s + b.quantity, 0) <= m.reorderLevel).length;
-  const nearExpiry = batches.filter((b) => b.quantity > 0 && daysUntil(b.expiryDate) <= 30).length;
+  const todayCost = todaySales.reduce((sum, s) => {
+    const items = db.saleItems.filter((i) => i.saleId === s.id);
+    return sum + items.reduce((line, i) => line + Number(i.costPrice) * i.quantity, 0);
+  }, 0);
+  const stockValue = db.batches.reduce((sum, b) => sum + Number(b.costPrice) * Number(b.quantity), 0);
+  const lowStock = db.medicines.filter((m) => stockOf(db, m.id) <= m.reorderLevel).length;
+  const nearExpiry = db.batches.filter((b) => Number(b.quantity) > 0 && daysUntil(b.expiryDate) <= 30).length;
 
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 6);
   weekStart.setHours(0, 0, 0, 0);
-  const weekSales = await prisma.sale.findMany({
-    where: { createdAt: { gte: weekStart }, status: { not: "VOID" } },
-    select: { createdAt: true, total: true },
-  });
+  const weekSales = db.sales.filter((s) => s.status !== "VOID" && new Date(s.createdAt) >= weekStart);
   const week = [];
   for (let i = 6; i >= 0; i--) {
     const day = new Date();
     day.setDate(day.getDate() - i);
     day.setHours(0, 0, 0, 0);
     const key = day.toISOString().slice(0, 10);
-    const daySales = weekSales.filter((s) => s.createdAt.toISOString().slice(0, 10) === key);
+    const daySales = weekSales.filter((s) => new Date(s.createdAt).toISOString().slice(0, 10) === key);
     week.push({
       date: key.slice(5, 10),
       sales: daySales.reduce((sum, s) => sum + Number(s.total), 0),
@@ -55,13 +44,23 @@ reportsRouter.get("/dashboard", async (_req, res) => {
     });
   }
 
+  const recentSales = db.sales
+    .slice()
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, 6)
+    .map((sale) => {
+      const customer = sale.customerId ? db.customers.find((c) => c.id === sale.customerId) : null;
+      const user = db.users.find((u) => u.id === sale.createdById);
+      return { ...sale, customer, createdBy: { name: user?.name || "" } };
+    });
+
   res.json({
     todayRevenue,
     todayBills: todaySales.length,
     todayProfit: todayRevenue - todayCost,
     stockValue,
-    medicineCount: medicines.length,
-    customerCount: customers,
+    medicineCount: db.medicines.length,
+    customerCount: db.customers.length,
     lowStock,
     nearExpiry,
     week,
@@ -104,6 +103,7 @@ function periodRange(type: string, dateStr: string) {
 }
 
 reportsRouter.get("/sales", async (req, res) => {
+  const db = loadDb();
   const type = String(req.query.type || "day");
   const date = String(req.query.date || new Date().toISOString().slice(0, 10));
   const range = req.query.from && req.query.to
@@ -111,31 +111,30 @@ reportsRouter.get("/sales", async (req, res) => {
     : periodRange(type, date);
   range.to.setHours(23, 59, 59, 999);
 
-  const [sales, purchases, expenses] = await Promise.all([
-    prisma.sale.findMany({
-      where: { createdAt: { gte: range.from, lte: range.to }, status: { not: "VOID" } },
-      include: { items: { include: { medicine: true } }, customer: true, createdBy: { select: { name: true } } },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.purchase.findMany({
-      where: { createdAt: { gte: range.from, lte: range.to } },
-      include: { supplier: true },
-    }),
-    prisma.expense.findMany({
-      where: { date: { gte: range.from, lte: range.to } },
-    }),
-  ]);
+  const sales = db.sales
+    .filter((s) => s.status !== "VOID" && inRange(s.createdAt, range.from, range.to))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .map((sale) => {
+      const customer = sale.customerId ? db.customers.find((c) => c.id === sale.customerId) : null;
+      const user = db.users.find((u) => u.id === sale.createdById);
+      const items = db.saleItems
+        .filter((i) => i.saleId === sale.id)
+        .map((item) => ({ ...item, medicine: db.medicines.find((m) => m.id === item.medicineId) || null }));
+      return { ...sale, items, customer, createdBy: { name: user?.name || "" } };
+    });
+  const purchases = db.purchases
+    .filter((p) => inRange(p.createdAt, range.from, range.to))
+    .map((p) => ({ ...p, supplier: db.suppliers.find((s) => s.id === p.supplierId) || null }));
+  const expenses = db.expenses.filter((e) => inRange(e.date, range.from, range.to));
 
   const revenue = sales.reduce((sum, s) => sum + Number(s.total), 0);
   const tax = sales.reduce((sum, s) => sum + Number(s.tax), 0);
   const cost = sales.reduce(
-    (sum, s) => sum + s.items.reduce((line, i) => line + Number(i.costPrice) * i.quantity, 0),
+    (sum, s) => sum + s.items.reduce((line: number, i: { costPrice: number; quantity: number }) => line + Number(i.costPrice) * i.quantity, 0),
     0
   );
   const buys = purchases.reduce((sum, p) => sum + Number(p.total), 0);
   const expensesTotal = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
-  const profit = revenue - cost;
-  const profitAfterTax = revenue - tax - cost - expensesTotal;
 
   res.json({
     type,
@@ -147,8 +146,8 @@ reportsRouter.get("/sales", async (req, res) => {
     cost,
     buys,
     expenses: expensesTotal,
-    profit,
-    profitAfterTax,
+    profit: revenue - cost,
+    profitAfterTax: revenue - tax - cost - expensesTotal,
     sales,
     purchases,
     expenseRows: expenses,
@@ -156,22 +155,24 @@ reportsRouter.get("/sales", async (req, res) => {
 });
 
 reportsRouter.get("/top-medicines", async (_req, res) => {
-  const items = await prisma.saleItem.groupBy({
-    by: ["medicineId"],
-    _sum: { quantity: true, lineTotal: true },
-    orderBy: { _sum: { quantity: "desc" } },
-    take: 8,
-  });
-
-  const medicines = await prisma.medicine.findMany({
-    where: { id: { in: items.map((i) => i.medicineId) } },
-  });
+  const db = loadDb();
+  const totals = new Map<string, { quantity: number; revenue: number }>();
+  for (const item of db.saleItems) {
+    const current = totals.get(item.medicineId) || { quantity: 0, revenue: 0 };
+    current.quantity += Number(item.quantity || 0);
+    current.revenue += Number(item.lineTotal || 0);
+    totals.set(item.medicineId, current);
+  }
+  const items = [...totals.entries()]
+    .map(([medicineId, sum]) => ({ medicineId, ...sum }))
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 8);
 
   res.json(
     items.map((item) => ({
-      medicine: medicines.find((m) => m.id === item.medicineId),
-      quantity: item._sum.quantity || 0,
-      revenue: item._sum.lineTotal || 0,
+      medicine: db.medicines.find((m) => m.id === item.medicineId) || null,
+      quantity: item.quantity,
+      revenue: item.revenue,
     }))
   );
 });

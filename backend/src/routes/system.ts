@@ -34,7 +34,7 @@ systemRouter.post("/license", async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Write the pharmacy name and license key." });
   try {
-    res.json(await activateLicense(parsed.data.shopName, parsed.data.key));
+    res.json(activateLicense(parsed.data.shopName, parsed.data.key));
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "License key is wrong." });
   }

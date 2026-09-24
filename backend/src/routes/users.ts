@@ -1,18 +1,19 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
+import { loadDb, newId, nowIso, withDb } from "../lib/storeDb";
 import { authRequired, requireRoles, writeAudit } from "../middleware/auth";
 
 export const usersRouter = Router();
 usersRouter.use(authRequired, requireRoles("ADMIN"));
 
+function publicUser(user: any) {
+  return { id: user.id, name: user.name, email: user.email, role: user.role, isActive: user.isActive, createdAt: user.createdAt };
+}
+
 usersRouter.get("/", async (_req, res) => {
-  const users = await prisma.user.findMany({
-    select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
-  res.json(users);
+  const users = loadDb().users.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  res.json(users.map(publicUser));
 });
 
 usersRouter.post("/", async (req, res) => {
@@ -29,21 +30,32 @@ usersRouter.post("/", async (req, res) => {
     return res.status(400).json({ message: "Please fill name, email, password and role." });
   }
 
-  const exists = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (exists) return res.status(409).json({ message: "A user with this email already exists." });
-
-  const user = await prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      passwordHash: await bcrypt.hash(parsed.data.password, 10),
-      role: parsed.data.role,
-    },
-    select: { id: true, name: true, email: true, role: true, isActive: true },
-  });
-
-  await writeAudit(req.user?.id, "CREATE", "User", user.id, user.email);
-  res.status(201).json(user);
+  try {
+    const user = withDb((db) => {
+      if (db.users.some((u) => u.email === parsed.data.email)) {
+        throw new Error("exists");
+      }
+      const created = {
+        id: newId(),
+        name: parsed.data.name,
+        email: parsed.data.email,
+        passwordHash: bcrypt.hashSync(parsed.data.password, 10),
+        role: parsed.data.role,
+        isActive: true,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      db.users.push(created);
+      return created;
+    });
+    await writeAudit(req.user?.id, "CREATE", "User", user.id, user.email);
+    res.status(201).json(publicUser(user));
+  } catch (error) {
+    if (error instanceof Error && error.message === "exists") {
+      return res.status(409).json({ message: "A user with this email already exists." });
+    }
+    res.status(400).json({ message: "Could not add user." });
+  }
 });
 
 usersRouter.patch("/:id", async (req, res) => {
@@ -58,52 +70,54 @@ usersRouter.patch("/:id", async (req, res) => {
 
   if (!parsed.success) return res.status(400).json({ message: "Invalid user update." });
 
-  const data: Record<string, unknown> = { ...parsed.data };
-  if (parsed.data.password) {
-    data.passwordHash = await bcrypt.hash(parsed.data.password, 10);
-    delete data.password;
+  try {
+    const user = withDb((db) => {
+      const target = db.users.find((u) => u.id === req.params.id);
+      if (!target) throw new Error("User not found.");
+      if (target.id === req.user!.id) throw new Error("You cannot change or delete your own account.");
+      if (target.role === "ADMIN" && parsed.data.isActive === false) {
+        const admins = db.users.filter((u) => u.role === "ADMIN" && u.isActive).length;
+        if (admins <= 1) throw new Error("Keep at least one admin.");
+      }
+      if (parsed.data.name) target.name = parsed.data.name;
+      if (parsed.data.role) target.role = parsed.data.role;
+      if (parsed.data.isActive !== undefined) target.isActive = parsed.data.isActive;
+      if (parsed.data.password) target.passwordHash = bcrypt.hashSync(parsed.data.password, 10);
+      target.updatedAt = nowIso();
+      return target;
+    });
+    await writeAudit(req.user?.id, "UPDATE", "User", user.id);
+    res.json(publicUser(user));
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "Invalid user update." });
   }
-
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target) return res.status(404).json({ message: "User not found." });
-  if (target.id === req.user!.id) {
-    return res.status(400).json({ message: "You cannot change or delete your own account." });
-  }
-  if (target.role === "ADMIN" && parsed.data.isActive === false) {
-    const admins = await prisma.user.count({ where: { role: "ADMIN", isActive: true } });
-    if (admins <= 1) return res.status(400).json({ message: "Keep at least one admin." });
-  }
-
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data,
-    select: { id: true, name: true, email: true, role: true, isActive: true },
-  });
-  await writeAudit(req.user?.id, "UPDATE", "User", user.id);
-  res.json(user);
 });
 
 usersRouter.delete("/:id", async (req, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target) return res.status(404).json({ message: "User not found." });
-  if (target.id === req.user!.id) {
-    return res.status(400).json({ message: "You cannot change or delete your own account." });
+  try {
+    const target = withDb((db) => {
+      const user = db.users.find((u) => u.id === req.params.id);
+      if (!user) throw new Error("User not found.");
+      if (user.id === req.user!.id) throw new Error("You cannot change or delete your own account.");
+      if (user.role === "ADMIN") {
+        const admins = db.users.filter((u) => u.role === "ADMIN" && u.isActive).length;
+        if (admins <= 1) throw new Error("Keep at least one admin.");
+      }
+      const used =
+        db.sales.filter((s) => s.createdById === user.id).length +
+        db.purchases.filter((p) => p.createdById === user.id).length +
+        db.saleReturns.filter((r) => r.createdById === user.id).length;
+      if (used) {
+        user.isActive = false;
+        user.updatedAt = nowIso();
+      } else {
+        db.users = db.users.filter((u) => u.id !== user.id);
+      }
+      return user;
+    });
+    await writeAudit(req.user?.id, "DELETE", "User", target.id, target.email);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "Could not delete user." });
   }
-  if (target.role === "ADMIN") {
-    const admins = await prisma.user.count({ where: { role: "ADMIN", isActive: true } });
-    if (admins <= 1) return res.status(400).json({ message: "Keep at least one admin." });
-  }
-  const [salesCount, purchasesCount, returnsCount] = await Promise.all([
-    prisma.sale.count({ where: { createdById: target.id } }),
-    prisma.purchase.count({ where: { createdById: target.id } }),
-    prisma.saleReturn.count({ where: { createdById: target.id } }),
-  ]);
-  const used = salesCount + purchasesCount + returnsCount;
-  if (used) {
-    await prisma.user.update({ where: { id: target.id }, data: { isActive: false } });
-  } else {
-    await prisma.user.delete({ where: { id: target.id } });
-  }
-  await writeAudit(req.user?.id, "DELETE", "User", target.id, target.email);
-  res.json({ ok: true });
 });

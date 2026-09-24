@@ -2,5 +2,6 @@
   "version": "1.0.0",
   "port": 4050,
   "githubRepo": "abidurahmanshinwari2-art/pharmacy-management",
-  "licenseSecret": "pms-pharmacy-key-v1-h7n3r9q5"
+  "licenseSecret": "pms-pharmacy-key-v1-h7n3r9q5",
+  "jwtSecret": "pms-jwt-v1"
 }

@@ -1,36 +1,28 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
 import { nextNumber } from "../lib/helpers";
+import { loadDb, newId, nowIso, withDb, withSale } from "../lib/storeDb";
 import { authRequired, requireRoles, writeAudit } from "../middleware/auth";
 
 export const salesRouter = Router();
 salesRouter.use(authRequired);
 
 salesRouter.get("/", async (req, res) => {
-  const sales = await prisma.sale.findMany({
-    include: {
-      customer: { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: Number(req.query.limit || 50),
-  });
+  const db = loadDb();
+  const limit = Number(req.query.limit || 50);
+  const sales = db.sales
+    .slice()
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, limit)
+    .map((sale) => withSale(db, sale));
   res.json(sales);
 });
 
 salesRouter.get("/:id", async (req, res) => {
-  const sale = await prisma.sale.findUnique({
-    where: { id: req.params.id },
-    include: {
-      customer: true,
-      createdBy: { select: { name: true } },
-      items: { include: { medicine: true, batch: true } },
-      returns: true,
-    },
-  });
+  const db = loadDb();
+  const sale = db.sales.find((s) => s.id === req.params.id);
   if (!sale) return res.status(404).json({ message: "Sale not found." });
-  res.json(sale);
+  res.json(withSale(db, sale, true));
 });
 
 salesRouter.post("/", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), async (req, res) => {
@@ -63,31 +55,26 @@ salesRouter.post("/", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), async (req
   }
 
   try {
-    const sale = await prisma.$transaction(async (tx) => {
-      const settings = await tx.storeSetting.findFirst();
-      const invoiceNo = await nextNumber("INV");
+    const sale = withDb((db) => {
+      const settings = db.storeSettings[0];
+      const invoiceNo = nextNumber("INV");
       const prepared = [];
 
       for (const item of parsed.data.items) {
-        const medicine = await tx.medicine.findUnique({
-          where: { id: item.medicineId },
-          include: { batches: { where: { quantity: { gt: 0 } }, orderBy: { expiryDate: "asc" } } },
-        });
+        const medicine = db.medicines.find((m) => m.id === item.medicineId);
         if (!medicine) throw new Error("A medicine on this bill was not found.");
-
-        let batch = item.batchId
-          ? await tx.batch.findUnique({ where: { id: item.batchId } })
-          : medicine.batches[0];
-
-        if (!batch || batch.quantity < item.quantity) {
+        const openBatches = db.batches
+          .filter((b) => b.medicineId === medicine.id && Number(b.quantity) > 0)
+          .sort((a, b) => +new Date(a.expiryDate) - +new Date(b.expiryDate));
+        const batch = item.batchId ? db.batches.find((b) => b.id === item.batchId) : openBatches[0];
+        if (!batch || Number(batch.quantity) < item.quantity) {
           throw new Error(`${medicine.brandName} does not have enough stock.`);
         }
-
         const taxRate = Number(medicine.taxPercent || settings?.taxPercent || 0);
         const taxable = item.quantity * item.unitPrice - item.discount;
         const tax = (taxable * taxRate) / 100;
-
         prepared.push({
+          id: newId(),
           medicineId: medicine.id,
           batchId: batch.id,
           quantity: item.quantity,
@@ -110,39 +97,29 @@ salesRouter.post("/", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), async (req
         throw new Error("Select a customer for a loan bill.");
       }
 
-      const created = await tx.sale.create({
-        data: {
-          invoiceNo,
-          customerId: parsed.data.customerId || null,
-          type: parsed.data.type,
-          doctorName: parsed.data.doctorName,
-          rxNumber: parsed.data.rxNumber,
-          subtotal,
-          discount: parsed.data.discount,
-          tax,
-          total,
-          paid: parsed.data.paymentMethod === "CREDIT" ? parsed.data.paid : total,
-          paymentMethod: parsed.data.paymentMethod,
-          notes: parsed.data.notes,
-          createdById: req.user!.id,
-          items: { create: prepared },
-        },
-        include: {
-          customer: true,
-          createdBy: { select: { name: true } },
-          items: { include: { medicine: true, batch: true } },
-        },
-      });
-
-      for (const item of prepared) {
-        await tx.batch.update({
-          where: { id: item.batchId },
-          data: { quantity: { decrement: item.quantity } },
-        });
-      }
+      const createdAt = nowIso();
+      const created = {
+        id: newId(),
+        invoiceNo,
+        date: createdAt,
+        customerId: parsed.data.customerId || null,
+        type: parsed.data.type,
+        doctorName: parsed.data.doctorName || "",
+        rxNumber: parsed.data.rxNumber || "",
+        subtotal,
+        discount: parsed.data.discount,
+        tax,
+        total,
+        paid: parsed.data.paymentMethod === "CREDIT" ? parsed.data.paid : total,
+        paymentMethod: parsed.data.paymentMethod,
+        status: "COMPLETED",
+        notes: parsed.data.notes || "",
+        createdById: req.user!.id,
+        createdAt,
+      };
 
       if (parsed.data.customerId && parsed.data.paymentMethod === "CREDIT") {
-        const customer = await tx.customer.findUnique({ where: { id: parsed.data.customerId } });
+        const customer = db.customers.find((c) => c.id === parsed.data.customerId);
         if (!customer) throw new Error("Customer not found.");
         const due = total - parsed.data.paid;
         const limit = Number(customer.creditLimit || 0);
@@ -151,16 +128,19 @@ salesRouter.post("/", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), async (req
         if (remaining + due > limit + 0.001) {
           throw new Error("This customer cannot take more loan. The loan limit is finished.");
         }
-        await tx.customer.update({
-          where: { id: parsed.data.customerId },
-          data: { outstanding: { increment: due } },
-        });
+        customer.outstanding = remaining + due;
       }
 
-      return created;
+      for (const item of prepared) {
+        const batch = db.batches.find((b) => b.id === item.batchId);
+        if (batch) batch.quantity = Number(batch.quantity) - item.quantity;
+        db.saleItems.push({ ...item, saleId: created.id });
+      }
+      db.sales.push(created);
+      return withSale(db, created, true);
     });
 
-    await writeAudit(req.user?.id, "CREATE", "Sale", sale.id, sale.invoiceNo);
+    writeAudit(req.user?.id, "CREATE", "Sale", sale.id, sale.invoiceNo);
     res.status(201).json(sale);
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Could not complete sale." });
@@ -189,90 +169,88 @@ salesRouter.patch("/:id", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), async 
   if (!parsed.success) return res.status(400).json({ message: "Please edit the bill items." });
 
   try {
-    const sale = await prisma.$transaction(async (tx) => {
-      const existing = await tx.sale.findUnique({
-        where: { id: req.params.id },
-        include: { items: { include: { medicine: true, batch: true } } },
-      });
+    const sale = withDb((db) => {
+      const existing = db.sales.find((s) => s.id === req.params.id);
       if (!existing) throw new Error("Sale not found.");
       if (existing.status === "RETURNED" || existing.status === "VOID") {
         throw new Error("This bill cannot be changed.");
       }
 
-      const settings = await tx.storeSetting.findFirst();
+      const settings = db.storeSettings[0];
       const discount = parsed.data.discount ?? Number(existing.discount);
-
+      const items = db.saleItems.filter((i) => i.saleId === existing.id);
       const keepIds = new Set(parsed.data.items.map((row) => row.saleItemId).filter(Boolean));
-      for (const item of existing.items) {
+
+      for (const item of items) {
         if (!keepIds.has(item.id)) {
-          await tx.batch.update({ where: { id: item.batchId }, data: { quantity: { increment: item.quantity } } });
-          await tx.saleItem.delete({ where: { id: item.id } });
+          const batch = db.batches.find((b) => b.id === item.batchId);
+          if (batch) batch.quantity = Number(batch.quantity) + item.quantity;
+          db.saleItems = db.saleItems.filter((i) => i.id !== item.id);
         }
       }
 
       for (const row of parsed.data.items) {
         if (row.saleItemId) {
-          const item = existing.items.find((i) => i.id === row.saleItemId);
+          const item = db.saleItems.find((i) => i.id === row.saleItemId);
           if (!item) throw new Error("A bill line was not found.");
+          const medicine = db.medicines.find((m) => m.id === item.medicineId);
           if (row.quantity <= 0) {
-            await tx.batch.update({ where: { id: item.batchId }, data: { quantity: { increment: item.quantity } } });
-            await tx.saleItem.delete({ where: { id: item.id } });
+            const batch = db.batches.find((b) => b.id === item.batchId);
+            if (batch) batch.quantity = Number(batch.quantity) + item.quantity;
+            db.saleItems = db.saleItems.filter((i) => i.id !== item.id);
             continue;
           }
           const delta = row.quantity - item.quantity;
+          const batch = db.batches.find((b) => b.id === item.batchId);
           if (delta > 0) {
-            const batch = await tx.batch.findUnique({ where: { id: item.batchId } });
-            if (!batch || batch.quantity < delta) {
-              throw new Error(`${item.medicine.brandName} does not have enough stock.`);
+            if (!batch || Number(batch.quantity) < delta) {
+              throw new Error(`${medicine?.brandName || "Medicine"} does not have enough stock.`);
             }
-            await tx.batch.update({ where: { id: item.batchId }, data: { quantity: { decrement: delta } } });
-          } else if (delta < 0) {
-            await tx.batch.update({ where: { id: item.batchId }, data: { quantity: { increment: -delta } } });
+            batch.quantity = Number(batch.quantity) - delta;
+          } else if (delta < 0 && batch) {
+            batch.quantity = Number(batch.quantity) - delta;
           }
-          const taxRate = Number(item.medicine.taxPercent || settings?.taxPercent || 0);
-          const taxable = row.quantity * row.unitPrice - Number(item.discount);
+          const taxRate = Number(medicine?.taxPercent || settings?.taxPercent || 0);
+          const taxable = row.quantity * row.unitPrice - Number(item.discount || 0);
           const tax = (taxable * taxRate) / 100;
-          await tx.saleItem.update({
-            where: { id: item.id },
-            data: { quantity: row.quantity, unitPrice: row.unitPrice, tax, lineTotal: taxable + tax },
-          });
+          item.quantity = row.quantity;
+          item.unitPrice = row.unitPrice;
+          item.tax = tax;
+          item.lineTotal = taxable + tax;
           continue;
         }
 
         if (!row.medicineId || row.quantity <= 0) continue;
-        const medicine = await tx.medicine.findUnique({
-          where: { id: row.medicineId },
-          include: { batches: { where: { quantity: { gt: 0 } }, orderBy: { expiryDate: "asc" } } },
-        });
+        const medicine = db.medicines.find((m) => m.id === row.medicineId);
         if (!medicine) throw new Error("A medicine on this bill was not found.");
-        const batch = row.batchId
-          ? await tx.batch.findUnique({ where: { id: row.batchId } })
-          : medicine.batches[0];
-        if (!batch || batch.quantity < row.quantity) {
+        const openBatches = db.batches
+          .filter((b) => b.medicineId === medicine.id && Number(b.quantity) > 0)
+          .sort((a, b) => +new Date(a.expiryDate) - +new Date(b.expiryDate));
+        const batch = row.batchId ? db.batches.find((b) => b.id === row.batchId) : openBatches[0];
+        if (!batch || Number(batch.quantity) < row.quantity) {
           throw new Error(`${medicine.brandName} does not have enough stock.`);
         }
         const taxRate = Number(medicine.taxPercent || settings?.taxPercent || 0);
         const taxable = row.quantity * row.unitPrice;
         const tax = (taxable * taxRate) / 100;
-        await tx.saleItem.create({
-          data: {
-            saleId: existing.id,
-            medicineId: medicine.id,
-            batchId: batch.id,
-            quantity: row.quantity,
-            unitPrice: row.unitPrice,
-            discount: 0,
-            tax,
-            lineTotal: taxable + tax,
-            costPrice: Number(batch.costPrice),
-          },
+        db.saleItems.push({
+          id: newId(),
+          saleId: existing.id,
+          medicineId: medicine.id,
+          batchId: batch.id,
+          quantity: row.quantity,
+          unitPrice: row.unitPrice,
+          discount: 0,
+          tax,
+          lineTotal: taxable + tax,
+          costPrice: Number(batch.costPrice),
         });
-        await tx.batch.update({ where: { id: batch.id }, data: { quantity: { decrement: row.quantity } } });
+        batch.quantity = Number(batch.quantity) - row.quantity;
       }
 
-      const items = await tx.saleItem.findMany({ where: { saleId: existing.id } });
-      const subtotal = items.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
-      const tax = items.reduce((sum, item) => sum + Number(item.tax), 0);
+      const nextItems = db.saleItems.filter((i) => i.saleId === existing.id);
+      const subtotal = nextItems.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
+      const tax = nextItems.reduce((sum, item) => sum + Number(item.tax), 0);
       const total = subtotal - discount + tax;
       const paid = existing.paymentMethod === "CREDIT" ? Math.min(Number(existing.paid), total) : total;
 
@@ -281,31 +259,26 @@ salesRouter.patch("/:id", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), async 
         const newDue = Math.max(total - paid, 0);
         const delta = newDue - oldDue;
         if (delta !== 0) {
-          const customer = await tx.customer.findUnique({ where: { id: existing.customerId } });
+          const customer = db.customers.find((c) => c.id === existing.customerId);
           if (!customer) throw new Error("Customer not found.");
           const remaining = Number(customer.outstanding || 0) + delta;
           if (delta > 0 && remaining > Number(customer.creditLimit || 0) + 0.001) {
             throw new Error("This customer cannot take more loan. The loan limit is finished.");
           }
-          await tx.customer.update({
-            where: { id: existing.customerId },
-            data: { outstanding: { increment: delta } },
-          });
+          customer.outstanding = remaining;
         }
       }
 
-      return tx.sale.update({
-        where: { id: existing.id },
-        data: { subtotal, discount, tax, total, paid },
-        include: {
-          customer: true,
-          createdBy: { select: { name: true } },
-          items: { include: { medicine: true, batch: true } },
-        },
-      });
+      existing.subtotal = subtotal;
+      existing.discount = discount;
+      existing.tax = tax;
+      existing.total = total;
+      existing.paid = paid;
+      if (parsed.data.notes !== undefined) existing.notes = parsed.data.notes;
+      return withSale(db, existing, true);
     });
 
-    await writeAudit(req.user?.id, "UPDATE", "Sale", sale.id, sale.invoiceNo);
+    writeAudit(req.user?.id, "UPDATE", "Sale", sale.id, sale.invoiceNo);
     res.json(sale);
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Could not edit bill." });
@@ -323,62 +296,59 @@ salesRouter.post("/:id/return", requireRoles("ADMIN", "PHARMACIST", "CASHIER"), 
   if (!parsed.success) return res.status(400).json({ message: "Select items and a return reason." });
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.findUnique({
-        where: { id: req.params.id },
-        include: { items: true },
-      });
+    const result = withDb((db) => {
+      const sale = db.sales.find((s) => s.id === req.params.id);
       if (!sale) throw new Error("Sale not found.");
       if (sale.status === "VOID") throw new Error("This bill is already void.");
+      const saleItems = db.saleItems.filter((i) => i.saleId === sale.id);
 
       let returnTotal = 0;
       for (const item of parsed.data.items) {
-        const saleItem = sale.items.find((s) => s.id === item.saleItemId);
+        const saleItem = saleItems.find((s) => s.id === item.saleItemId);
         if (!saleItem) throw new Error("A return line does not belong to this bill.");
         if (item.quantity > saleItem.quantity) throw new Error("Return quantity is higher than sold quantity.");
-
         const unitNet = Number(saleItem.lineTotal) / saleItem.quantity;
         returnTotal += unitNet * item.quantity;
+        const batch = db.batches.find((b) => b.id === saleItem.batchId);
+        if (batch) batch.quantity = Number(batch.quantity) + item.quantity;
+      }
 
-        await tx.batch.update({
-          where: { id: saleItem.batchId },
-          data: { quantity: { increment: item.quantity } },
+      const created = {
+        id: newId(),
+        saleId: sale.id,
+        reason: parsed.data.reason,
+        total: returnTotal,
+        createdById: req.user!.id,
+        createdAt: nowIso(),
+      };
+      db.saleReturns.push(created);
+      for (const item of parsed.data.items) {
+        db.saleReturnItems.push({
+          id: newId(),
+          returnId: created.id,
+          saleItemId: item.saleItemId,
+          quantity: item.quantity,
         });
       }
 
-      const created = await tx.saleReturn.create({
-        data: {
-          saleId: sale.id,
-          reason: parsed.data.reason,
-          total: returnTotal,
-          createdById: req.user!.id,
-          items: { create: parsed.data.items },
-        },
-      });
-
-      const returnedAll = parsed.data.items.reduce((sum, i) => sum + i.quantity, 0) ===
-        sale.items.reduce((sum, i) => sum + i.quantity, 0);
-
-      await tx.sale.update({
-        where: { id: sale.id },
-        data: { status: returnedAll ? "RETURNED" : "PARTIAL_RETURN" },
-      });
+      const returnedAll =
+        parsed.data.items.reduce((sum, i) => sum + i.quantity, 0) ===
+        saleItems.reduce((sum, i) => sum + i.quantity, 0);
+      sale.status = returnedAll ? "RETURNED" : "PARTIAL_RETURN";
 
       if (sale.customerId && sale.paymentMethod === "CREDIT") {
         const saleDue = Math.max(Number(sale.total) - Number(sale.paid), 0);
         const reduceDue = Math.min(saleDue, returnTotal);
         if (reduceDue > 0) {
-          await tx.customer.update({
-            where: { id: sale.customerId },
-            data: { outstanding: { decrement: reduceDue } },
-          });
+          const customer = db.customers.find((c) => c.id === sale.customerId);
+          if (customer) customer.outstanding = Number(customer.outstanding || 0) - reduceDue;
         }
       }
 
       return created;
     });
 
-    await writeAudit(req.user?.id, "RETURN", "Sale", req.params.id, parsed.data.reason);
+    writeAudit(req.user?.id, "RETURN", "Sale", String(req.params.id), parsed.data.reason);
     res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Could not process return." });

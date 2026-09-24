@@ -1,7 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { prisma } from "../lib/prisma";
-import type { Role } from "@prisma/client";
+import { appConfig } from "../lib/appPaths";
+import { newId, nowIso, withDb } from "../lib/storeDb";
+
+export type Role = "ADMIN" | "PHARMACIST" | "CASHIER" | "STOREKEEPER" | "ACCOUNTANT";
 
 export type AuthUser = {
   id: string;
@@ -18,6 +20,10 @@ declare global {
   }
 }
 
+function jwtSecret() {
+  return String((appConfig() as { jwtSecret?: string }).jwtSecret || process.env.JWT_SECRET || "pms-jwt-v1");
+}
+
 export function authRequired(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
@@ -26,7 +32,7 @@ export function authRequired(req: Request, res: Response, next: NextFunction) {
 
   try {
     const token = header.slice(7);
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "dev") as AuthUser;
+    const payload = jwt.verify(token, jwtSecret()) as AuthUser;
     req.user = payload;
     next();
   } catch {
@@ -43,14 +49,24 @@ export function requireRoles(...roles: Role[]) {
   };
 }
 
-export async function writeAudit(
+export function writeAudit(
   userId: string | undefined,
   action: string,
   entity: string,
   entityId?: string,
   details?: string
 ) {
-  await prisma.auditLog.create({
-    data: { userId, action, entity, entityId, details },
+  withDb((db) => {
+    db.auditLogs.push({
+      id: newId(),
+      userId: userId || null,
+      action,
+      entity,
+      entityId: entityId || null,
+      details: details || null,
+      createdAt: nowIso(),
+    });
   });
 }
+
+export { jwtSecret };

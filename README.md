@@ -1,52 +1,44 @@
 # Pharmacy Management System
 
-Offline pharmacy ERP for one shop: sales, stock, purchases, customers, loan, reports.
+Offline pharmacy shop for one computer: sales, stock, purchases, customers, loan, reports.
+
+Same use as the store system. **Only Node.js** is needed. There is no PostgreSQL.
 
 ## Open on this PC
 
-1. Install **Node.js** and **PostgreSQL**.
-2. Copy `backend/.env.example` to `backend/.env` and set the database URL.
-3. In `backend`: `npx prisma db push` then `npm run db:seed` (first time).
-4. Double-click `start-pharmacy.bat`.
-5. The first screen asks for the **pharmacy name** and **license key**.
+1. Install **Node.js**.
+2. Double-click `start-pharmacy.bat`.
+3. The first time, a Desktop icon **Pharmacy Management System** is created.
+4. Enter the pharmacy name and license key.
 
-## License key (you, the owner)
-
-On your computer run `make-license.bat`.
-
-Write the pharmacy name exactly as the shop will type it. Example:
-
-```
-Pharmacy: Noor Pharmacy
-Key:      PMS-XXXX-XXXX-XXXX-XXXX
-```
-
-Give that same name and key to each computer for that shop.
+Shop data is saved in `pharmacy-data` on that computer.
 
 ## Put it on another computer
 
-1. Copy the whole project folder (USB or disk).
-2. Install Node.js and PostgreSQL there.
-3. Create the database and set `backend/.env`.
-4. Run `start-pharmacy.bat`.
-5. Enter the pharmacy name and license key.
-6. Shop data stays on that computer unless you load a backup.
+1. Copy the whole project folder (USB), or download it from GitHub.
+2. Install **Node.js** on that computer. Nothing else.
+3. Double-click `start-pharmacy.bat`.
+4. Enter the same pharmacy name and the same license key.
 
-## Backup
+## License key (you, the owner)
 
-Settings → **Save backup**. The file is saved on the Desktop and in `pharmacy-data/backups`. Copy it to USB.
-
-Settings → **Load backup** to put that file onto another computer.
-
-## GitHub
-
-https://github.com/abidurahmanshinwari2-art/pharmacy-management
-
-## Update
-
-Settings → **Update now**, or run `update-pharmacy.bat`. Shop data in `pharmacy-data` and the PostgreSQL database are not replaced.
+On your computer run `make-license.bat`. Write the pharmacy name exactly. The key is also saved on the Desktop as `pharmacy-license.txt`. Give that same name and key to each shop PC.
 
 ## Login after license
 
 - Email: `admin@pharmacy.local`
 - Password: `admin123`
+
+## Backup
+
+Settings → **Save backup**. The file is saved on the Desktop and in `pharmacy-data/backups`.
+
+Settings → **Load backup** on another computer to copy the shop data.
+
+## Update
+
+Settings → **Update now**, or run `update-pharmacy.bat`. Shop data in `pharmacy-data` is not replaced.
+
+## GitHub
+
+https://github.com/abidurahmanshinwari2-art/pharmacy-management

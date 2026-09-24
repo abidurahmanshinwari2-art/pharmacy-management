@@ -1,21 +1,18 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
 import { nextNumber } from "../lib/helpers";
+import { loadDb, newId, nowIso, withDb, withPurchase } from "../lib/storeDb";
 import { authRequired, requireRoles, writeAudit } from "../middleware/auth";
 
 export const purchasesRouter = Router();
 purchasesRouter.use(authRequired);
 
 purchasesRouter.get("/", async (_req, res) => {
-  const purchases = await prisma.purchase.findMany({
-    include: {
-      supplier: true,
-      createdBy: { select: { name: true } },
-      items: { include: { medicine: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const db = loadDb();
+  const purchases = db.purchases
+    .slice()
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .map((p) => withPurchase(db, p));
   res.json(purchases);
 });
 
@@ -43,76 +40,63 @@ purchasesRouter.post("/", requireRoles("ADMIN", "PHARMACIST", "STOREKEEPER"), as
   }
 
   try {
-    const purchase = await prisma.$transaction(async (tx) => {
-      const invoiceNo = await nextNumber("PO");
+    const purchase = withDb((db) => {
+      const invoiceNo = nextNumber("PO");
+      const createdAt = nowIso();
+      const purchaseId = newId();
       const lines = parsed.data.items.map((item) => ({
-        ...item,
-        expiryDate: new Date(item.expiryDate),
+        id: newId(),
+        purchaseId,
+        medicineId: item.medicineId,
+        batchNo: item.batchNo,
+        expiryDate: new Date(item.expiryDate).toISOString(),
+        quantity: item.quantity,
+        costPrice: item.costPrice,
         lineTotal: item.quantity * item.costPrice,
       }));
       const subtotal = lines.reduce((sum, item) => sum + item.lineTotal, 0);
-
-      const created = await tx.purchase.create({
-        data: {
-          invoiceNo,
-          supplierId: parsed.data.supplierId,
-          notes: parsed.data.notes,
-          subtotal,
-          tax: 0,
-          total: subtotal,
-          createdById: req.user!.id,
-          items: {
-            create: lines.map((item) => ({
-              medicineId: item.medicineId,
-              batchNo: item.batchNo,
-              expiryDate: item.expiryDate,
-              quantity: item.quantity,
-              costPrice: item.costPrice,
-              lineTotal: item.lineTotal,
-            })),
-          },
-        },
-        include: { supplier: true, items: { include: { medicine: true } } },
-      });
+      const created = {
+        id: purchaseId,
+        invoiceNo,
+        date: createdAt,
+        status: "RECEIVED",
+        supplierId: parsed.data.supplierId,
+        notes: parsed.data.notes || "",
+        subtotal,
+        tax: 0,
+        total: subtotal,
+        createdById: req.user!.id,
+        createdAt,
+      };
+      db.purchases.push(created);
+      db.purchaseItems.push(...lines);
 
       for (const item of lines) {
-        const existing = await tx.batch.findUnique({
-          where: {
-            medicineId_batchNo: { medicineId: item.medicineId, batchNo: item.batchNo },
-          },
-        });
-
+        const existing = db.batches.find((b) => b.medicineId === item.medicineId && b.batchNo === item.batchNo);
         if (existing) {
-          await tx.batch.update({
-            where: { id: existing.id },
-            data: {
-              quantity: existing.quantity + item.quantity,
-              costPrice: item.costPrice,
-              expiryDate: item.expiryDate,
-            },
-          });
+          existing.quantity = Number(existing.quantity) + item.quantity;
+          existing.costPrice = item.costPrice;
+          existing.expiryDate = item.expiryDate;
         } else {
-          await tx.batch.create({
-            data: {
-              medicineId: item.medicineId,
-              batchNo: item.batchNo,
-              expiryDate: item.expiryDate,
-              quantity: item.quantity,
-              costPrice: item.costPrice,
-            },
+          db.batches.push({
+            id: newId(),
+            medicineId: item.medicineId,
+            batchNo: item.batchNo,
+            expiryDate: item.expiryDate,
+            quantity: item.quantity,
+            costPrice: item.costPrice,
+            location: "Main shelf",
+            createdAt,
           });
         }
-
-        await tx.medicine.update({
-          where: { id: item.medicineId },
-          data: { purchasePrice: item.costPrice },
-        });
+        const medicine = db.medicines.find((m) => m.id === item.medicineId);
+        if (medicine) medicine.purchasePrice = item.costPrice;
       }
 
-      return created;
+      return withPurchase(db, created);
     });
 
-    await writeAudit(req.user?.id, "CREATE", "Purchase", purchase.id, purchase.invoiceNo);
+    writeAudit(req.user?.id, "CREATE", "Purchase", purchase.id, purchase.invoiceNo);
     res.status(201).json(purchase);
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Could not receive purchase." });

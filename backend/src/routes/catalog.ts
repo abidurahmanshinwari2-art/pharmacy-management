@@ -1,69 +1,55 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
+import { loadDb, newId, nowIso, withDb, withMedicine } from "../lib/storeDb";
 import { authRequired, requireRoles } from "../middleware/auth";
 
 export const catalogRouter = Router();
 catalogRouter.use(authRequired);
 
+function matchText(value: unknown, q: string) {
+  return String(value || "").toLowerCase().includes(q.toLowerCase());
+}
+
 catalogRouter.get("/categories", async (_req, res) => {
-  const categories = await prisma.category.findMany({
-    orderBy: { name: "asc" },
-    include: { _count: { select: { medicines: true } } },
-  });
+  const db = loadDb();
+  const categories = db.categories
+    .slice()
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+    .map((category) => ({
+      ...category,
+      _count: { medicines: db.medicines.filter((m) => m.categoryId === category.id).length },
+    }));
   res.json(categories);
 });
 
 catalogRouter.post("/categories", requireRoles("ADMIN", "PHARMACIST", "STOREKEEPER"), async (req, res) => {
   const parsed = z.object({ name: z.string().min(2) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Category name is required." });
-  const category = await prisma.category.create({ data: parsed.data });
+  const category = withDb((db) => {
+    const created = { id: newId(), name: parsed.data.name };
+    db.categories.push(created);
+    return created;
+  });
   res.status(201).json(category);
 });
 
 catalogRouter.get("/medicines", async (req, res) => {
   const q = String(req.query.q || "").trim();
   const lite = String(req.query.lite || "") === "1";
-  const include = {
-    category: true,
-    batches: lite
-      ? { where: { quantity: { gt: 0 } }, orderBy: { expiryDate: "asc" as const }, take: 4 }
-      : { orderBy: { expiryDate: "asc" as const } },
-  };
-
+  const db = loadDb();
   const exact = q
-    ? await prisma.medicine.findFirst({
-        where: {
-          OR: [{ barcode: q }, { sku: { equals: q, mode: "insensitive" } }],
-        },
-        include,
-      })
+    ? db.medicines.find((m) => m.barcode === q || String(m.sku || "").toLowerCase() === q.toLowerCase())
     : null;
-
-  const medicines = await prisma.medicine.findMany({
-    where: q
-      ? {
-          OR: [
-            { brandName: { contains: q, mode: "insensitive" } },
-            { genericName: { contains: q, mode: "insensitive" } },
-            { sku: { contains: q, mode: "insensitive" } },
-            { barcode: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
-    include,
-    orderBy: { brandName: "asc" },
-    take: lite ? 24 : 80,
-  });
-
+  let medicines = db.medicines.slice();
+  if (q) {
+    medicines = medicines.filter((m) =>
+      matchText(m.brandName, q) || matchText(m.genericName, q) || matchText(m.sku, q) || matchText(m.barcode, q)
+    );
+  }
+  medicines.sort((a, b) => String(a.brandName).localeCompare(String(b.brandName)));
+  medicines = medicines.slice(0, lite ? 24 : 80);
   const list = exact ? [exact, ...medicines.filter((m) => m.id !== exact.id)] : medicines;
-
-  res.json(
-    list.map((m) => ({
-      ...m,
-      stock: m.batches.reduce((sum, b) => sum + b.quantity, 0),
-    }))
-  );
+  res.json(list.map((m) => withMedicine(db, m, lite)));
 });
 
 catalogRouter.post("/medicines", requireRoles("ADMIN", "PHARMACIST", "STOREKEEPER"), async (req, res) => {
@@ -88,12 +74,17 @@ catalogRouter.post("/medicines", requireRoles("ADMIN", "PHARMACIST", "STOREKEEPE
 
   if (!parsed.success) return res.status(400).json({ message: "Please complete the medicine form." });
 
-  const medicine = await prisma.medicine.create({
-    data: {
+  const medicine = withDb((db) => {
+    const created = {
+      id: newId(),
       ...parsed.data,
       barcode: parsed.data.barcode || null,
-    },
-    include: { category: true, batches: true },
+      isActive: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    db.medicines.push(created);
+    return withMedicine(db, created);
   });
   res.status(201).json({ ...medicine, stock: 0 });
 });
@@ -121,13 +112,16 @@ catalogRouter.patch("/medicines/:id", requireRoles("ADMIN", "PHARMACIST", "STORE
 
   if (!parsed.success) return res.status(400).json({ message: "Invalid medicine update." });
 
-  const medicine = await prisma.medicine.update({
-    where: { id: req.params.id },
-    data: parsed.data,
-    include: { category: true, batches: true },
-  });
-  res.json({
-    ...medicine,
-    stock: medicine.batches.reduce((sum, b) => sum + b.quantity, 0),
-  });
+  try {
+    const medicine = withDb((db) => {
+      const existing = db.medicines.find((m) => m.id === req.params.id);
+      if (!existing) throw new Error("Medicine not found.");
+      Object.assign(existing, parsed.data);
+      existing.updatedAt = nowIso();
+      return withMedicine(db, existing);
+    });
+    res.json(medicine);
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "Invalid medicine update." });
+  }
 });

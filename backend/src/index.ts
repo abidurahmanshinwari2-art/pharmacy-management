@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import path from "node:path";
@@ -16,7 +15,7 @@ import { reportsRouter } from "./routes/reports";
 import { expensesRouter } from "./routes/expenses";
 import { systemRouter } from "./routes/system";
 import { licenseStatus } from "./lib/license";
-import { APP_ROOT, appConfig } from "./lib/appPaths";
+import { APP_ROOT, DATA_DIR, appConfig } from "./lib/appPaths";
 
 const app = express();
 app.use(cors({
@@ -66,5 +65,6 @@ if (fs.existsSync(path.join(dist, "index.html"))) {
 
 const port = Number(process.env.PORT || appConfig().port || 4050);
 app.listen(port, "127.0.0.1", () => {
-  console.log(`Pharmacy ERP running on http://localhost:${port}`);
+  console.log(`Pharmacy is open on http://localhost:${port}`);
+  console.log(`Shop data is saved in ${DATA_DIR}`);
 });
