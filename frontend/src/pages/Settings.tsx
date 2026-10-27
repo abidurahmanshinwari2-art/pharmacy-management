@@ -13,6 +13,7 @@ export function Settings() {
   const [rooms, setRooms] = useState<{ id: string; name: string; address: string }[]>([]);
   const [room, setRoom] = useState<{ id?: string; name: string; address: string } | null>(null);
   const [message, setMessage] = useState("");
+  const [lanUrls, setLanUrls] = useState<string[]>([]);
 
   useEffect(() => {
     api.get("/settings").then((res) => {
@@ -35,6 +36,7 @@ export function Settings() {
       });
       setRooms(data.locations || []);
     });
+    api.get("/health").then((res) => setLanUrls(res.data.lanUrls || [])).catch(() => setLanUrls([]));
   }, []);
 
   async function onSubmit(event: FormEvent) {
@@ -161,6 +163,18 @@ export function Settings() {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="card p-6 space-y-3">
+        <h3 className="text-lg font-extrabold">{t("shopShare")}</h3>
+        <p className="text-sm muted">{t("shopShareHelp")}</p>
+        {lanUrls.length === 0 ? (
+          <p className="text-sm muted">{t("shopShareNone")}</p>
+        ) : (
+          lanUrls.map((url) => (
+            <div key={url} className="rounded-xl border px-4 py-3 font-bold" style={{ borderColor: "var(--line)" }}>{url.replace(/^https?:\/\//, "")}</div>
+          ))
+        )}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">

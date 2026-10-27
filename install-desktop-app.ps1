@@ -74,6 +74,11 @@ function Add-PharmacyShortcut([string]$folder) {
   $lnk.Save()
 }
 
+try {
+  netsh advfirewall firewall delete rule name="Pharmacy Management System" | Out-Null
+  netsh advfirewall firewall add rule name="Pharmacy Management System" dir=in action=allow protocol=TCP localport=4050 | Out-Null
+} catch { }
+
 $desktop = [Environment]::GetFolderPath('Desktop')
 $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 Add-PharmacyShortcut $desktop

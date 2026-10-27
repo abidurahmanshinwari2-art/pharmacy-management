@@ -4,6 +4,7 @@ import { activateLicense, licenseStatus } from "../lib/license";
 import { restoreBackup, saveBackupToComputer } from "../lib/backup";
 import { applyUpdate, checkUpdate } from "../lib/updater";
 import { appConfig, DATA_DIR, APP_ROOT, githubRepo } from "../lib/appPaths";
+import { lanUrls } from "../lib/lan";
 import { authRequired, requireRoles } from "../middleware/auth";
 
 export const systemRouter = Router();
@@ -11,6 +12,7 @@ export const systemRouter = Router();
 systemRouter.get("/health", (_req, res) => {
   const cfg = appConfig();
   const license = licenseStatus();
+  const port = Number(process.env.PORT || cfg.port || 4050);
   res.json({
     ok: true,
     name: "Pharmacy ERP API",
@@ -20,6 +22,9 @@ systemRouter.get("/health", (_req, res) => {
     appPath: APP_ROOT,
     githubRepo: githubRepo(),
     licensed: license.licensed,
+    shopName: license.shopName,
+    port,
+    lanUrls: lanUrls(port),
   });
 });
 

@@ -71,6 +71,7 @@ export function createSeed(): PharmacyDb {
 
   db.users = [
     { id: adminId, name: "Hasan Ali", email: "admin@pharmacy.local", passwordHash, role: "ADMIN", isActive: true, createdAt, updatedAt: createdAt },
+    { id: newId(), name: "Manager", email: "manager@pharmacy.local", passwordHash, role: "ADMIN", isActive: true, createdAt, updatedAt: createdAt },
     { id: newId(), name: "Ayesha Khan", email: "pharmacist@pharmacy.local", passwordHash, role: "PHARMACIST", isActive: true, createdAt, updatedAt: createdAt },
     { id: newId(), name: "Bilal Ahmed", email: "cashier@pharmacy.local", passwordHash, role: "CASHIER", isActive: true, createdAt, updatedAt: createdAt },
   ];
@@ -197,6 +198,33 @@ function normalizeDb(raw: any): PharmacyDb {
   return base;
 }
 
+function ensureLoginUsers(db: PharmacyDb) {
+  const passwordHash = bcrypt.hashSync("admin123", 10);
+  const createdAt = nowIso();
+  const needed = [
+    { name: "Hasan Ali", email: "admin@pharmacy.local", role: "ADMIN" },
+    { name: "Manager", email: "manager@pharmacy.local", role: "ADMIN" },
+    { name: "Ayesha Khan", email: "pharmacist@pharmacy.local", role: "PHARMACIST" },
+    { name: "Bilal Ahmed", email: "cashier@pharmacy.local", role: "CASHIER" },
+  ];
+  let changed = false;
+  for (const row of needed) {
+    if (db.users.some((u) => String(u.email || "").toLowerCase() === row.email)) continue;
+    db.users.push({
+      id: newId(),
+      name: row.name,
+      email: row.email,
+      passwordHash,
+      role: row.role,
+      isActive: true,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    changed = true;
+  }
+  return changed;
+}
+
 export function loadDb(): PharmacyDb {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_FILE)) {
@@ -205,7 +233,9 @@ export function loadDb(): PharmacyDb {
     return seeded;
   }
   try {
-    return normalizeDb(JSON.parse(fs.readFileSync(STORE_FILE, "utf8")));
+    const db = normalizeDb(JSON.parse(fs.readFileSync(STORE_FILE, "utf8")));
+    if (ensureLoginUsers(db)) saveDb(db);
+    return db;
   } catch {
     if (fs.existsSync(STORE_BAK)) {
       try {

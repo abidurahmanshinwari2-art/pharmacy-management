@@ -16,11 +16,10 @@ import { expensesRouter } from "./routes/expenses";
 import { systemRouter } from "./routes/system";
 import { licenseStatus } from "./lib/license";
 import { APP_ROOT, DATA_DIR, appConfig } from "./lib/appPaths";
+import { lanUrls } from "./lib/lan";
 
 const app = express();
-app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:4050", "http://127.0.0.1:4050"],
-}));
+app.use(cors());
 app.use(express.json({ limit: "80mb" }));
 
 app.use((req, res, next) => {
@@ -64,7 +63,11 @@ if (fs.existsSync(path.join(dist, "index.html"))) {
 }
 
 const port = Number(process.env.PORT || appConfig().port || 4050);
-app.listen(port, "127.0.0.1", () => {
+app.listen(port, "0.0.0.0", () => {
   console.log(`Pharmacy is open on http://localhost:${port}`);
+  for (const url of lanUrls(port)) {
+    console.log(`Other PC in this shop: ${url}`);
+  }
   console.log(`Shop data is saved in ${DATA_DIR}`);
+  console.log("This PC can work offline. Keep this window open if another PC is selling.");
 });

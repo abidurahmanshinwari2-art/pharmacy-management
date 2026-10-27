@@ -16,7 +16,7 @@
   --sidebar-end: #072820;
   --shadow: 0 10px 30px rgba(18, 53, 44, 0.04);
   --text-size: 16px;
-  --sans: "Plus Jakarta Sans", "Vazirmatn", "Noto Naskh Arabic", sans-serif;
+  --sans: "Segoe UI", "Tahoma", "Arial", sans-serif;
 }
 
 [data-theme="pine"] {
@@ -34,7 +34,7 @@
   --sidebar-end: #0c241e;
   --shadow: 0 18px 40px rgba(18, 53, 44, 0.08);
   --text-size: 16px;
-  --sans: "Plus Jakarta Sans", "Vazirmatn", "Noto Naskh Arabic", sans-serif;
+  --sans: "Segoe UI", "Tahoma", "Arial", sans-serif;
 }
 
 [data-theme="ink"] {
@@ -102,15 +102,15 @@
 }
 
 html[data-font="clear"] {
-  --sans: "Noto Sans", "Noto Sans Arabic", sans-serif;
+  --sans: "Segoe UI", "Tahoma", sans-serif;
 }
 
 html[data-font="naskh"] {
-  --sans: "Noto Naskh Arabic", "Vazirmatn", "Plus Jakarta Sans", sans-serif;
+  --sans: "Tahoma", "Segoe UI", sans-serif;
 }
 
 html[data-font="simple"] {
-  --sans: "Segoe UI", "Vazirmatn", sans-serif;
+  --sans: "Segoe UI", "Tahoma", sans-serif;
 }
 
 html,

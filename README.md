@@ -1,39 +1,44 @@
 # Pharmacy Management System
 
-Offline pharmacy shop for one computer: sales, stock, purchases, customers, loan, reports.
+Offline pharmacy shop. **Only Node.js** is needed. There is no PostgreSQL. Internet is not needed after Node.js and the first package install.
 
-Same use as the store system. **Only Node.js** is needed. There is no PostgreSQL.
-
-## Open on this PC
+## Open on the main shop PC
 
 1. Install **Node.js**.
 2. Double-click `start-pharmacy.bat`.
-3. The first time, a Desktop icon **Pharmacy Management System** is created.
-4. Enter the pharmacy name and license key.
+3. Enter the pharmacy name and license key.
 
-Shop data is saved in `pharmacy-data` on that computer.
+Shop data is saved in `pharmacy-data` on this computer.
 
-## Put it on another computer
+## Second PC in the same pharmacy (shared data)
 
-1. Copy the whole project folder (USB), or download it from GitHub.
-2. Install **Node.js** on that computer. Nothing else.
-3. Double-click `start-pharmacy.bat`.
-4. Enter the same pharmacy name and the same license key.
+Use **one license** for the shop. Do not start a second shop database.
+
+1. Keep the **main shop PC** open.
+2. On the second PC, install Node.js, copy the same program folder.
+3. Double-click `join-pharmacy.bat`.
+4. Type the address shown in Settings on the main PC, for example `192.168.1.20`.
+5. Open **Pharmacy Management System**. This PC uses the main shop stock and bills.
+6. Both PCs can sell at the same time. Login with cashier on one PC and manager/admin on the other.
+
+The two computers must be on the same shop Wi-Fi or cable.
 
 ## License key (you, the owner)
 
-On your computer run `make-license.bat`. Write the pharmacy name exactly. The key is also saved on the Desktop as `pharmacy-license.txt`. Give that same name and key to each shop PC.
+On your computer run `make-license.bat`. Write the pharmacy name exactly. The key is also saved on the Desktop as `pharmacy-license.txt`.
 
-## Login after license
+## Login
 
-- Email: `admin@pharmacy.local`
-- Password: `admin123`
+| Who | Email | Password |
+| --- | --- | --- |
+| Admin / main | `admin@pharmacy.local` | `admin123` |
+| Manager | `manager@pharmacy.local` | `admin123` |
+| Cashier | `cashier@pharmacy.local` | `admin123` |
+| Pharmacist | `pharmacist@pharmacy.local` | `admin123` |
 
 ## Backup
 
 Settings → **Save backup**. The file is saved on the Desktop and in `pharmacy-data/backups`.
-
-Settings → **Load backup** on another computer to copy the shop data.
 
 ## Update
 

@@ -41,6 +41,7 @@ export function LicensePage({ onDone }: { onDone: () => void }) {
           <div>
             <h3>{t("licenseUnlock")}</h3>
             <p className="muted">{t("licenseHint")}</p>
+            <p className="muted text-xs mt-2">{t("shopShareHelp")}</p>
           </div>
           {error && <div className="rounded-xl bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</div>}
           <Field title={t("licenseShop")}>

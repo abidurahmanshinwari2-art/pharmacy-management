@@ -47,6 +47,7 @@ export function Login() {
           <div>
             <h3>{t("welcome")}</h3>
             <p className="muted">{t("signInTo")} {shopName}</p>
+            <p className="muted text-xs mt-2">{t("loginAccounts")}</p>
           </div>
           {error && <div className="rounded-xl bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</div>}
           <Field title={t("email")}>
