@@ -6,7 +6,9 @@ echo Use this on the SECOND computer of the same pharmacy.
 echo The MAIN shop PC must stay open with start-pharmacy.bat.
 echo Both computers then sell from the same stock and bills.
 echo.
-echo On the main PC, Settings shows the shop address, like 192.168.1.20
+echo Write the MAIN shop PC address: 192.168.0.1
+echo Do not write 192.168.0.2. That number is this second PC.
+echo Do not write a number that starts with 169.254.
 echo.
 set /p HOST=Write the main shop PC address: 
 if "%HOST%"=="" (

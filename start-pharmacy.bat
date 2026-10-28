@@ -4,25 +4,31 @@ cd /d "%~dp0"
 setlocal EnableDelayedExpansion
 set PORT=4050
 
+if exist "pharmacy-data\client.json" (
+  set "SHOPMODE="
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0read-shop-mode.ps1"
+  set /p SHOPMODE=<"%TEMP%\pharmacy-shop-mode.txt"
+  if /i "!SHOPMODE!"=="bad" (
+    echo The shop PC address is missing. Run join-pharmacy.bat again and type 192.168.0.1
+    pause
+    exit /b 1
+  )
+  if /i "!SHOPMODE:~0,6!"=="client" (
+    echo This counter PC uses the shop data on !SHOPMODE:~7!
+    echo Keep the main shop PC open. Both PCs can sell at the same time.
+    start "" "!SHOPMODE:~7!"
+    pause
+    exit /b 0
+  )
+  echo This is the main shop PC. Starting the pharmacy here.
+  echo The second PC must open http://192.168.0.1:4050
+)
+
 where node >nul 2>nul
 if errorlevel 1 (
   echo Node.js is not installed. Install it first, then run this file again.
   pause
   exit /b 1
-)
-
-if exist "pharmacy-data\client.json" (
-  for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$c=Get-Content -Raw '%~dp0pharmacy-data\client.json' | ConvertFrom-Json; $h=[string]$c.host; $h=$h -replace '^https?://',''; $h=$h -replace '/.*$',''; $p=4050; if($c.port){$p=[int]$c.port}; Write-Output ($h+':'+$p)"`) do set SHOP=%%A
-  if "!SHOP!"=="" (
-    echo The shop PC address is missing. Run join-pharmacy.bat again.
-    pause
-    exit /b 1
-  )
-  echo This counter PC uses the shop data on http://!SHOP!
-  echo Keep the main shop PC open. Both PCs can sell at the same time.
-  start "" "http://!SHOP!"
-  pause
-  exit /b 0
 )
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-desktop-app.ps1"
@@ -42,7 +48,7 @@ if not exist "frontend\node_modules" (
   if errorlevel 1 call npm --prefix frontend install --offline --no-audit --no-fund
 )
 
-set UI_BUILD=2026-10-27-lan-share
+set UI_BUILD=2026-10-29-lan-firewall
 set NEED_BUILD=0
 if not exist "frontend\dist\index.html" set NEED_BUILD=1
 if not exist "frontend\dist\.ui-build" set NEED_BUILD=1
@@ -68,7 +74,15 @@ echo App folder: %~dp0
 echo Pharmacy data: %~dp0pharmacy-data
 echo This shop PC can work without internet.
 echo Opening http://localhost:4050
-echo For a second PC in this shop, run join-pharmacy.bat there and type this PC address.
+echo Second PC browser address: http://192.168.0.1:4050
+echo In join-pharmacy.bat on the second PC, type 192.168.0.1
+echo Do not use an address that starts with 169.254
+netsh advfirewall firewall show rule name="Pharmacy Management System" | findstr /I "4050" >nul
+if errorlevel 1 (
+  echo.
+  echo Windows is blocking the second PC. Click Yes on the next question.
+  powershell -NoProfile -Command "Start-Process -FilePath '%~dp0allow-second-pc.bat' -Verb RunAs -Wait"
+)
 start "" cmd /c "timeout /t 3 /nobreak >nul & start http://localhost:4050"
 cd /d "%~dp0backend"
 set PORT=4050

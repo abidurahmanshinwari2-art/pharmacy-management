@@ -75,8 +75,10 @@ function Add-PharmacyShortcut([string]$folder) {
 }
 
 try {
-  netsh advfirewall firewall delete rule name="Pharmacy Management System" | Out-Null
-  netsh advfirewall firewall add rule name="Pharmacy Management System" dir=in action=allow protocol=TCP localport=4050 | Out-Null
+  netsh advfirewall firewall show rule name="Pharmacy Management System" | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    netsh advfirewall firewall add rule name="Pharmacy Management System" dir=in action=allow protocol=TCP localport=4050 profile=any | Out-Null
+  }
 } catch { }
 
 $desktop = [Environment]::GetFolderPath('Desktop')
